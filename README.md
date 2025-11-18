@@ -12,6 +12,41 @@ A lightweight GUI tool to quickly switch between Battle.net accounts on Windows.
 - **Auto-Launch**: Automatically stops the current Battle.net process and launches it with the selected account
 - **Config Backup**: Creates automatic backups of your Battle.net config before switching accounts
 
+## Quick Start Guide
+
+Follow this guide every time you want to switch between accounts:
+
+### Step 1: Launch the Tool
+Run `bnet-switcher.exe` (or `.\bnet-switcher-gui.ps1` if using PowerShell)
+
+### Step 2: Select First Account
+- The first account in the list will be automatically selected
+- Click **"Switch Account"** or **double-click** the account name
+- Battle.net will launch with that account
+
+### Step 3: Enter Password
+- Enter your Battle.net password when prompted
+- Wait for the account to fully load
+
+### Step 4: Switch to Next Account
+- Open the switcher tool again (or keep it open)
+- Select the next account from the list
+- Click **"Switch Account"** or **double-click**
+- Battle.net will close and reopen with the new account
+
+### Step 5: Repeat for All Accounts
+- Continue steps 3-4 for each account you want to log into
+- The tool automatically:
+  - Closes the current Battle.net process
+  - Reorders accounts so your most-used ones appear at the top
+  - Creates backups of your config file for safety
+
+### Tips
+- **Most Recent Account**: The account you switched to will move to the top of the list next time
+- **Keyboard Shortcut**: Double-click any account to switch instantly
+- **Safe Switching**: All account switches are backed up automatically
+- **No Password Storage**: The tool never saves passwords - Battle.net handles authentication
+
 ## How to Use
 
 ### Run the PowerShell Script Directly
