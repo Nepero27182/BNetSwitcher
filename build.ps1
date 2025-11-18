@@ -1,0 +1,91 @@
+#--------------------------------------
+# Build Script: Compile PS1 to EXE
+#--------------------------------------
+# This script converts bnet-switcher-gui.ps1 to an executable using PS2EXE
+# For manual installation, visit: https://github.com/MScholtes/PS2EXE/releases
+
+param(
+    [string]$SourceScript = "bnet-switcher-gui.ps1",
+    [string]$OutputExe = "bnet-switcher.exe",
+    [string]$IconPath = $null
+)
+
+$ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+$SourceFull = Join-Path $ScriptPath $SourceScript
+
+if (-not (Test-Path $SourceFull)) {
+    Write-Error "Source script not found: $SourceFull"
+    exit 1
+}
+
+$OutputFull = Join-Path $ScriptPath $OutputExe
+
+# Check for ps2exe module
+$ps2exeAvailable = $false
+
+# First, try to find ps2exe module
+$ps2exeModule = Get-Module -Name ps2exe -ListAvailable -ErrorAction SilentlyContinue
+if ($ps2exeModule) {
+    Write-Host "ps2exe module found" -ForegroundColor Green
+    $ps2exeAvailable = $true
+} else {
+    Write-Host "Installing ps2exe module..." -ForegroundColor Cyan
+    try {
+        Install-Module ps2exe -Scope CurrentUser -Force -ErrorAction Stop | Out-Null
+        Write-Host "ps2exe module installed successfully" -ForegroundColor Green
+        Import-Module ps2exe -ErrorAction Stop | Out-Null
+        $ps2exeAvailable = $true
+    } catch {
+        Write-Host "Failed to install ps2exe module: $_" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Setup PS2EXE manually:" -ForegroundColor Cyan
+        Write-Host "  1. Visit: https://github.com/MScholtes/PS2EXE/releases" -ForegroundColor White
+        Write-Host "  2. Run: Install-Module ps2exe -Scope CurrentUser" -ForegroundColor White
+        Write-Host ""
+        exit 1
+    }
+}
+
+if (-not $ps2exeAvailable) {
+    Write-Error "ps2exe not available"
+    exit 1
+}
+
+# Build command with parameters
+$buildParams = @{
+    inputFile   = $SourceFull
+    outputFile  = $OutputFull
+    x64         = $true
+    noConsole   = $true
+}
+
+if (-not [string]::IsNullOrEmpty($IconPath)) {
+    $buildParams['iconFile'] = $IconPath
+}
+
+Write-Host "Building EXE..." -ForegroundColor Cyan
+Write-Host "  Source: $SourceFull"
+Write-Host "  Output: $OutputFull"
+if (-not [string]::IsNullOrEmpty($IconPath)) {
+    Write-Host "  Icon: $IconPath"
+}
+Write-Host ""
+
+# Build the EXE
+Write-Host "Command: ps2exe -inputFile '$SourceFull' -outputFile '$OutputFull' -x64 -noConsole$(if (-not [string]::IsNullOrEmpty($IconPath)) { " -iconFile '$IconPath'" })" -ForegroundColor Gray
+$buildOutput = ps2exe @buildParams 2>&1
+if ($buildOutput) {
+    Write-Host $buildOutput
+}
+# Verify output
+if (Test-Path $OutputFull) {
+    Write-Host ""
+    Write-Host "Build complete!" -ForegroundColor Green
+    Write-Host "Output: $OutputFull" -ForegroundColor Green
+    
+    $fileSize = (Get-Item $OutputFull).Length / 1MB
+    Write-Host "Size: $([math]::Round($fileSize, 2)) MB" -ForegroundColor Green
+} else {
+    Write-Error "Build failed: Output file not created"
+    exit 1
+}

@@ -1,0 +1,15 @@
+# Compiled binaries
+*.exe
+*.dll
+*.pdb
+
+# PowerShell logs
+*.log
+
+# IDE
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
