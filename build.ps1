@@ -3,11 +3,18 @@
 #--------------------------------------
 # This script converts bnet-switcher-gui.ps1 to an executable using PS2EXE
 # For manual installation, visit: https://github.com/MScholtes/PS2EXE/releases
+#
+# SECURITY & PRIVACY NOTICE:
+# - This script operates 100% OFFLINE - no internet required after initial ps2exe module install
+# - No data collection, telemetry, or external communications
+# - All operations are local machine only
+# - The source code is readable PowerShell - you can inspect exactly what it does
+# - PS2EXE is open source: https://github.com/MScholtes/PS2EXE/
 
 param(
     [string]$SourceScript = "bnet-switcher-gui.ps1",
     [string]$OutputExe = "bnet-switcher.exe",
-    [string]$IconPath = $null
+    [string]$IconPath = "bnet-switcher.ico"
 )
 
 $ScriptPath = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -19,6 +26,11 @@ if (-not (Test-Path $SourceFull)) {
 }
 
 $OutputFull = Join-Path $ScriptPath $OutputExe
+
+# Resolve IconPath to absolute path if it's relative
+if (-not [string]::IsNullOrEmpty($IconPath) -and -not [System.IO.Path]::IsPathRooted($IconPath)) {
+    $IconPath = Join-Path $ScriptPath $IconPath
+}
 
 # Check for ps2exe module
 $ps2exeAvailable = $false

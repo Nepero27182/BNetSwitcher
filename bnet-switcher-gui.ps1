@@ -1,6 +1,19 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+#--------------------------------------
+# SECURITY & PRIVACY NOTICE
+#--------------------------------------
+# This application is 100% LEGAL and SAFE:
+# - Operates ENTIRELY OFFLINE - no internet connection required
+# - NO data collection, telemetry, or external communications
+# - NO unauthorized server access - only modifies your local config
+# - Open source PowerShell code - you can inspect everything it does
+# - Performs only the same actions you would manually do
+# - Creates automatic backups for data safety
+
 # Suppress console output
 $ProgressPreference = 'SilentlyContinue'
 $ErrorActionPreference = 'SilentlyContinue'
@@ -34,7 +47,7 @@ $script:ButtonFont = "Segoe UI, 12"
 
 # Label Settings
 $script:LabelHeight = 24
-$script:LabelText = "Created by Blackwut"
+$script:LabelText = "Created by Blackwut - v0.1"
 $script:LabelFont = "Segoe UI, 10"
 
 # Calculated positions (set during GUI setup)
@@ -125,6 +138,27 @@ $form.MinimizeBox = $false
 $form.BackColor = $Colors.FormBack
 $form.ForeColor = $Colors.FormFore
 
+# Load and set icon if it exists
+# Try multiple possible icon locations
+$iconPaths = @(
+    "bnet-switcher.ico",
+    (Join-Path (Split-Path -Parent $PSCommandPath) "bnet-switcher.ico"),
+    (Join-Path $PSScriptRoot "bnet-switcher.ico"),
+    (Join-Path (Get-Location) "bnet-switcher.ico")
+)
+
+foreach ($iconPath in $iconPaths) {
+    if (Test-Path $iconPath) {
+        try {
+            $iconFile = Get-Item $iconPath
+            $form.Icon = [System.Drawing.Icon]::ExtractAssociatedIcon($iconFile.FullName)
+            break
+        } catch {
+            # Try next path
+        }
+    }
+}
+
 # Get actual client width (accounting for scrollbars, borders, etc.)
 $clientWidth = $form.ClientSize.Width
 
@@ -152,6 +186,7 @@ $list.BackColor = $Colors.ListBack
 $list.ForeColor = $Colors.ListFore
 $list.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
 $accounts | ForEach-Object { [void]$list.Items.Add($_) }
+$list.SelectedIndex = 0
 $form.Controls.Add($list)
 
 # SWITCH BUTTON
