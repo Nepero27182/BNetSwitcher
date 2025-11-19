@@ -47,7 +47,7 @@ $script:ButtonFont = "Segoe UI, 12"
 
 # Label Settings
 $script:LabelHeight = 24
-$script:LabelText = "Created by Blackwut - v0.1"
+$script:LabelText = "Created by Nepero - v0.1"
 $script:LabelFont = "Segoe UI, 10"
 
 # Calculated positions (set during GUI setup)

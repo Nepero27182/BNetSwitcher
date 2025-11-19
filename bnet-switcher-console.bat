@@ -22,9 +22,10 @@ if "%ACCOUNTS%"=="" (
     exit /b
 )
 
-echo ========================
-echo   Battle.net Accounts
-echo ========================
+echo ============================
+echo     Battle.Net Switcher
+echo   Created by Nepero - v0.1
+echo ============================
 echo.
 
 set COUNT=0

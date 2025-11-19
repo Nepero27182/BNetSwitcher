@@ -83,7 +83,7 @@ The `build.ps1` script automatically:
 - Verifies the output and reports file size
 
 **Result:**
-- **Output:** `bnet-switcher.exe` (~3-5 MB including .NET Framework)
+- **Output:** `bnet-switcher.exe`
 - **Platform:** Windows x64
 - **Execution:** No console window, silent operation
 
