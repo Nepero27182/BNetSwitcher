@@ -27,9 +27,15 @@ $VerbosePreference = 'SilentlyContinue'
 # Battle.net Config
 $script:ConfigPath = "$env:APPDATA\Battle.net\Battle.net.config"
 $script:BattleNetExe = "${env:ProgramFiles(x86)}\Battle.net\Battle.net Launcher.exe"
+$script:AppRoot = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $PSCommandPath }
+$script:DataFolder = Join-Path $env:APPDATA "BNetSwitcher"
+$script:BattleTagStorePath = Join-Path $script:DataFolder "battletags.json"
+$script:LegacyBattleTagStorePath = Join-Path $script:AppRoot "battletags.json"
+$script:RankCache = @{}
+$script:EnableDebugLogging = $false
 
 # Form Settings
-$script:FormWidth = 380
+$script:FormWidth = 800
 $script:FormHeight = 360
 $script:FormTitle = "Battle.net Account Switcher"
 
@@ -47,7 +53,7 @@ $script:ButtonFont = "Segoe UI, 12"
 
 # Label Settings
 $script:LabelHeight = 24
-$script:LabelText = "Created by Nepero - v0.1"
+$script:LabelText = "Created by Nepero - v0.2"
 $script:LabelFont = "Segoe UI, 10"
 
 # Calculated positions (set during GUI setup)
@@ -82,6 +88,13 @@ function Get-WindowsThemePreference {
 }
 
 $isDarkMode = -not (Get-WindowsThemePreference)
+
+function Write-DebugLog {
+    param([string]$Message)
+    if (-not $script:EnableDebugLogging) { return }
+    $timestamp = (Get-Date).ToString("HH:mm:ss")
+    Write-Host "[DEBUG $timestamp] $Message" -ForegroundColor Yellow
+}
 
 if (!(Test-Path $ConfigPath)) {
     [System.Windows.Forms.MessageBox]::Show("Battle.net.config not found!","ERROR","OK","Error")
@@ -122,6 +135,180 @@ $ThemeColors = @{
 
 $CurrentTheme = if ($isDarkMode) { "Dark" } else { "Light" }
 $Colors = $ThemeColors[$CurrentTheme]
+
+#--------------------------------------
+# BATTLETAG STORAGE & RANK HELPERS
+#--------------------------------------
+function Initialize-BattleTagStore {
+    try {
+        if (-not (Test-Path $script:DataFolder)) {
+            New-Item -ItemType Directory -Path $script:DataFolder -Force | Out-Null
+        }
+    } catch {
+        Write-DebugLog "Unable to create BattleTag data folder at $($script:DataFolder): $_"
+    }
+
+    if (-not (Test-Path $script:BattleTagStorePath) -and (Test-Path $script:LegacyBattleTagStorePath)) {
+        try {
+            Copy-Item -Path $script:LegacyBattleTagStorePath -Destination $script:BattleTagStorePath -Force
+            Write-DebugLog "Migrated legacy battletags.json from script folder."
+        } catch {
+            Write-DebugLog "Failed to migrate legacy BattleTag file: $_"
+        }
+    }
+}
+
+function Get-BattleTagStore {
+    Initialize-BattleTagStore
+
+    if (-not (Test-Path $script:BattleTagStorePath)) {
+        return @{}
+    }
+
+    try {
+        $raw = Get-Content $script:BattleTagStorePath -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @{} }
+        $data = $raw | ConvertFrom-Json
+        $map = @{}
+        if ($data -is [System.Collections.IDictionary]) {
+            foreach ($key in $data.Keys) {
+                $map[$key] = $data[$key]
+            }
+        } elseif ($null -ne $data) {
+            foreach ($prop in $data.PSObject.Properties) {
+                $map[$prop.Name] = $prop.Value
+            }
+        }
+        return $map
+    } catch {
+        return @{}
+    }
+}
+
+function Save-BattleTagStore {
+    param([hashtable]$Store)
+    try {
+        Initialize-BattleTagStore
+        ($Store | ConvertTo-Json -Depth 5) | Set-Content -Path $script:BattleTagStorePath -Encoding UTF8
+    } catch {
+        # ignore write issues
+    }
+}
+
+function Normalize-BattleTag {
+    param([string]$BattleTag)
+    if ([string]::IsNullOrWhiteSpace($BattleTag)) { return $null }
+    $normalized = $BattleTag.Trim() -replace '\s',''
+    $normalized = $normalized -replace '#','-'
+    return [System.Uri]::EscapeDataString($normalized)
+}
+
+function Format-RankValue {
+    param($RankNode)
+    if ($null -eq $RankNode) { return "Unranked" }
+
+    $division = $RankNode.division
+    if (-not [string]::IsNullOrWhiteSpace($division)) {
+        $division = $division.Substring(0,1).ToUpper() + $division.Substring(1)
+    }
+
+    $tier = $RankNode.tier
+    $value = $RankNode.value
+    if (-not $value) { $value = $RankNode.sr }
+    if (-not $value) { $value = $RankNode.rank }
+
+    $text = $division
+    if ($tier) {
+        $text = if ($text) { "$text $tier" } else { "$tier" }
+    }
+
+    if ($value) {
+        $text = if ($text) { "$text ($value)" } else { "$value" }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return "Unranked"
+    }
+
+    return $text
+}
+
+function Get-RoleRanks {
+    param([string]$BattleTag)
+
+    $result = [ordered]@{
+        Tank = ""
+        DPS = ""
+        Support = ""
+        OpenQueue = ""
+        Success = $false
+    }
+
+    $normalized = Normalize-BattleTag $BattleTag
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        Write-DebugLog "BattleTag missing; skip rank lookup."
+        return $result
+    }
+
+    if ($script:RankCache.ContainsKey($normalized)) {
+        Write-DebugLog "Cache hit for BattleTag $BattleTag ($normalized)."
+        return $script:RankCache[$normalized]
+    }
+
+    $url = "https://overfast-api.tekrop.fr/players/$normalized/summary"
+    Write-DebugLog "Requesting ranks from $url"
+    try {
+        $response = Invoke-RestMethod -Uri $url -UseBasicParsing -Method Get -TimeoutSec 10
+        Write-DebugLog "Received rank response for $BattleTag ($normalized)."
+        $tankRank = $response.competitive.pc.tank
+        $damageRank = $response.competitive.pc.damage
+        $supportRank = $response.competitive.pc.support
+        $openQueueRank = $response.competitive.pc.open_queue
+
+        $result.Tank = Format-RankValue $tankRank
+        $result.DPS = Format-RankValue $damageRank
+        $result.Support = Format-RankValue $supportRank
+        $result.OpenQueue = Format-RankValue $openQueueRank
+        $result.Success = $true
+    } catch {
+        Write-DebugLog "Rank lookup failed for $BattleTag ($normalized): $_"
+        $result.Tank = "Not Found"
+        $result.DPS = "Not Found"
+        $result.Support = "Not Found"
+        $result.OpenQueue = "Not Found"
+    }
+
+    $script:RankCache[$normalized] = $result
+    return $result
+}
+
+function Update-RowRanks {
+    param([System.Windows.Forms.DataGridViewRow]$Row)
+
+    if ($null -eq $Row) { return }
+
+    $battleTag = $Row.Cells["BattleTag"].Value
+    if ([string]::IsNullOrWhiteSpace($battleTag)) {
+        $Row.Cells["Tank"].Value = ""
+        $Row.Cells["DPS"].Value = ""
+        $Row.Cells["Support"].Value = ""
+        $Row.Cells["OpenQueue"].Value = ""
+        return
+    }
+
+    $Row.Cells["Tank"].Value = "Loading..."
+    $Row.Cells["DPS"].Value = "Loading..."
+    $Row.Cells["Support"].Value = "Loading..."
+    $Row.Cells["OpenQueue"].Value = "Loading..."
+
+    $ranks = Get-RoleRanks -BattleTag $battleTag
+    $Row.Cells["Tank"].Value = $ranks.Tank
+    $Row.Cells["DPS"].Value = $ranks.DPS
+    $Row.Cells["Support"].Value = $ranks.Support
+    $Row.Cells["OpenQueue"].Value = $ranks.OpenQueue
+}
+
+$script:BattleTagStore = Get-BattleTagStore
 
 #--------------------------------------
 # GUI SETUP
@@ -177,17 +364,93 @@ $script:ButtonY = $script:ListY + $script:ListHeight + $script:Padding
 $script:LabelX = $script:Padding
 $script:LabelY = $script:ButtonY + $script:ButtonHeight + $script:Padding
 
-# ACCOUNTS LIST
-$list = New-Object System.Windows.Forms.ListBox
+# ACCOUNTS GRID
+$list = New-Object System.Windows.Forms.DataGridView
 $list.Location = "$($script:ListX),$($script:ListY)"
 $list.Size = "$($script:ListWidth),$($script:ListHeight)"
 $list.Font = $script:ListFont
-$list.BackColor = $Colors.ListBack
+$list.BackgroundColor = $Colors.ListBack
 $list.ForeColor = $Colors.ListFore
+$list.GridColor = $Colors.ListFore
+$list.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$list.AllowUserToAddRows = $false
+$list.AllowUserToDeleteRows = $false
+$list.AllowUserToResizeRows = $false
+$list.ReadOnly = $false
+$list.MultiSelect = $false
+$list.SelectionMode = [System.Windows.Forms.DataGridViewSelectionMode]::FullRowSelect
+$list.RowHeadersVisible = $false
+$list.AutoSizeColumnsMode = [System.Windows.Forms.DataGridViewAutoSizeColumnsMode]::Fill
+$list.ColumnHeadersHeightSizeMode = [System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode]::AutoSize
+$list.EnableHeadersVisualStyles = $false
+$list.ColumnHeadersDefaultCellStyle.BackColor = $Colors.ButtonBack
+$list.ColumnHeadersDefaultCellStyle.ForeColor = $Colors.ButtonFore
+$list.DefaultCellStyle.BackColor = $Colors.ListBack
+$list.DefaultCellStyle.ForeColor = $Colors.ListFore
+$list.DefaultCellStyle.SelectionBackColor = [System.Drawing.Color]::FromArgb(70,120,200)
+$list.DefaultCellStyle.SelectionForeColor = [System.Drawing.Color]::White
 $list.Anchor = [System.Windows.Forms.AnchorStyles]::Top -bor [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right
-$accounts | ForEach-Object { [void]$list.Items.Add($_) }
-$list.SelectedIndex = 0
+
+[void]$list.Columns.Add("Account","`nAccount`n")
+[void]$list.Columns.Add("BattleTag","BattleTag")
+[void]$list.Columns.Add("Tank","Tank")
+[void]$list.Columns.Add("DPS","DPS")
+[void]$list.Columns.Add("Support","Support")
+[void]$list.Columns.Add("OpenQueue","Open")
+
+$list.Columns["Account"].ReadOnly = $true
+$list.Columns["BattleTag"].ReadOnly = $false
+$list.Columns["Tank"].ReadOnly = $true
+$list.Columns["DPS"].ReadOnly = $true
+$list.Columns["Support"].ReadOnly = $true
+$list.Columns["OpenQueue"].ReadOnly = $true
+
+$list.Columns["Account"].FillWeight = 30
+$list.Columns["BattleTag"].FillWeight = 20
+$list.Columns["Tank"].FillWeight = 12
+$list.Columns["DPS"].FillWeight = 12
+$list.Columns["Support"].FillWeight = 12
+$list.Columns["OpenQueue"].FillWeight = 14
+
 $form.Controls.Add($list)
+
+foreach ($account in $accounts) {
+    $battleTagValue = if ($script:BattleTagStore.ContainsKey($account)) { $script:BattleTagStore[$account] } else { "" }
+    $rowIndex = $list.Rows.Add($account, $battleTagValue, "", "", "", "")
+    if (-not [string]::IsNullOrWhiteSpace($battleTagValue)) {
+        $row = $list.Rows[$rowIndex]
+        $row.Cells["Tank"].Value = "Pending..."
+        $row.Cells["DPS"].Value = "Pending..."
+        $row.Cells["Support"].Value = "Pending..."
+        $row.Cells["OpenQueue"].Value = "Pending..."
+    }
+}
+
+if ($list.Rows.Count -gt 0) {
+    $list.Rows[0].Selected = $true
+}
+
+$battleTagColumnIndex = $list.Columns["BattleTag"].Index
+$list.Add_CellEndEdit({
+    param($sender, $eventArgs)
+    if ($eventArgs.ColumnIndex -ne $battleTagColumnIndex) { return }
+
+    $row = $sender.Rows[$eventArgs.RowIndex]
+    $accountValue = $row.Cells["Account"].Value
+    $battleTagValue = $row.Cells["BattleTag"].Value
+    $battleTagText = if ($battleTagValue) { $battleTagValue.ToString().Trim() } else { "" }
+
+    if ([string]::IsNullOrWhiteSpace($battleTagText)) {
+        if ($script:BattleTagStore.ContainsKey($accountValue)) {
+            $script:BattleTagStore.Remove($accountValue)
+        }
+    } else {
+        $script:BattleTagStore[$accountValue] = $battleTagText
+    }
+
+    Save-BattleTagStore -Store $script:BattleTagStore
+    Update-RowRanks -Row $row
+})
 
 # SWITCH BUTTON
 $btn = New-Object System.Windows.Forms.Button
@@ -216,6 +479,15 @@ $form.Controls.Add($AuthorLabel)
 #--------------------------------------
 # SWITCH LOGIC
 #--------------------------------------
+function Get-SelectedAccount {
+    param([System.Windows.Forms.DataGridView]$Grid)
+    if ($null -eq $Grid) { return $null }
+    if ($Grid.SelectedRows.Count -gt 0) {
+        return $Grid.SelectedRows[0].Cells["Account"].Value
+    }
+    return $null
+}
+
 function Switch-Account {
     param([string]$SelectedAccount)
     
@@ -226,6 +498,7 @@ function Switch-Account {
     # reorder account list
     $newList = @($SelectedAccount) + ($accounts | Where-Object { $_ -ne $SelectedAccount })
     $json.Client.SavedAccountNames = ($newList -join ",")
+    $accounts = $newList
 
     # backup
     Copy-Item $ConfigPath "$ConfigPath.backup" -Force
@@ -248,15 +521,27 @@ function Switch-Account {
 
 # Button click event
 $btn.Add_Click({
-    if ($list.SelectedItem) {
-        Switch-Account $list.SelectedItem
+    $selectedAccount = Get-SelectedAccount -Grid $list
+    if ($selectedAccount) {
+        Switch-Account $selectedAccount
     }
 })
 
-# Double-click event on list
-$list.Add_MouseDoubleClick({
-    if ($list.SelectedItem) {
-        Switch-Account $list.SelectedItem
+# Double-click event on grid
+$list.Add_CellDoubleClick({
+    param($sender, $eventArgs)
+    $selectedAccount = Get-SelectedAccount -Grid $sender
+    if ($selectedAccount) {
+        Switch-Account $selectedAccount
+    }
+})
+
+# Form shown event – refresh ranks after GUI loads
+$form.Add_Shown({
+    foreach ($row in $list.Rows) {
+        if ($row.Cells["BattleTag"].Value) {
+            Update-RowRanks -Row $row
+        }
     }
 })
 

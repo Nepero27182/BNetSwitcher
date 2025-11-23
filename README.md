@@ -4,35 +4,33 @@ A lightweight GUI tool to quickly switch between Battle.net accounts on Windows.
 
 ## Features
 
-- **Automatic Dark Mode Detection**: Automatically loads your Windows theme preference (light/dark) on startup
-- **Account Reordering**: When you switch to an account, it moves to the top of the list for quick access next time
-- **Silent Operation**: No console window, runs cleanly in the background
-- **Double-Click Support**: Switch accounts by double-clicking or using the button
-- **Account List**: Displays all saved Battle.net accounts from your config file
-- **Auto-Launch**: Automatically stops the current Battle.net process and launches it with the selected account
-- **Config Backup**: Creates automatic backups of your Battle.net config before switching accounts
+- **Automatic Dark Mode Detection**: Matches the GUI to your Windows light/dark preference on launch.
+- **BattleTag & Rank Tracking**: Add a BattleTag per account and automatically fetch Tank/DPS/Support/Open Queue SR via the OverFast API (requires internet access) when the window opens.
+- **Persistent BattleTags**: Tags are saved per account in `%APPDATA%\BNetSwitcher\battletags.json`, so EXE builds remain portable.
+- **Account Reordering**: Switching moves the selected account to the top of the config for faster follow-up launches.
+- **Silent Operation**: No console window; ideal for background use or pinned taskbar shortcuts.
+- **Data Grid with Double-Click Support**: Inline edit BattleTags, inspect ranks, and double-click any row to switch instantly.
+- **Auto-Launch & Cleanup**: Stops the current Battle.net process, launches it again, and closes the GUI automatically.
+- **Config Backup**: Creates backups of `Battle.net.config` before every change for safety.
 
 ## Quick Start Guide
 
 Follow this guide every time you want to switch between accounts:
 
 ### Step 1: Launch the Tool
-Run `bnet-switcher.exe` (or `.\bnet-switcher-gui.ps1` if using PowerShell)
+Run `bnet-switcher.exe` (or `.\bnet-switcher-gui.ps1` if using PowerShell). The grid will populate with every account found in your Battle.net config.
 
-### Step 2: Select First Account
-- The first account in the list will be automatically selected
-- Click **"Switch Account"** or **double-click** the account name
-- Battle.net will launch with that account
+### Step 2: Add or Update BattleTags (Optional)
+- Click inside the **BattleTag** column next to an account to add or edit a tag (format: `Name#1234`).
+- BattleTags save automatically to `%APPDATA%\BNetSwitcher\battletags.json` so the tool can write even when located in Program Files.
 
-### Step 3: Enter Password
-- Enter your Battle.net password when prompted
-- Wait for the account to fully load
+### Step 3: Let Ranks Load
+- After the window opens, the tool calls the OverFast API for every BattleTag.
+- Tank, DPS, Support, and Open Queue ranks fill in as soon as the responses arrive (placeholders show “Pending…” while loading).
 
-### Step 4: Switch to Next Account
-- Open the switcher tool again (or keep it open)
-- Select the next account from the list
-- Click **"Switch Account"** or **double-click**
-- Battle.net will close and reopen with the new account
+### Step 4: Switch Accounts
+- Select any row (or keep the first selection) and click **"Switch Account"** or simply double-click the account name.
+- Battle.net closes, the config updates, and the launcher restarts under the chosen account.
 
 ### Step 5: Repeat for All Accounts
 - Continue steps 3-4 for each account you want to log into
@@ -43,35 +41,14 @@ Run `bnet-switcher.exe` (or `.\bnet-switcher-gui.ps1` if using PowerShell)
 
 ### Tips
 - **Most Recent Account**: The account you switched to will move to the top of the list next time
-- **Keyboard Shortcut**: Double-click any account to switch instantly
+- **Mouse Shortcut**: Double-click any account to switch instantly
 - **Safe Switching**: All account switches are backed up automatically
 - **No Password Storage**: The tool never saves passwords - Battle.net handles authentication
 
-## How to Use
-
-### Run the PowerShell Script Directly
-```powershell
-.\bnet-switcher-gui.ps1
-```
-
-### Build a Standalone EXE
-```powershell
-.\build.ps1
-```
-
-Then run the generated `bnet-switcher.exe`
-
-### Build with Custom Options
-```powershell
-# With custom icon
-.\build.ps1 -IconPath "path\to\your\icon.ico"
-
-# With custom output filename
-.\build.ps1 -OutputExe "MyAccountSwitcher.exe"
-
-# Both
-.\build.ps1 -SourceScript "bnet-switcher-gui.ps1" -OutputExe "AccountSwitcher.exe" -IconPath "icon.ico"
-```
+### Rank API
+- BattleTag ranks come from the public [OverFast API](https://overfast-api.tekrop.fr) and require an active internet connection.
+- If you block the API or run fully offline, the Tank/DPS/Support/Open Queue cells will show “Pending…” or “Not Found” but account switching still works.
+- Avoid spamming updates; the API has rate limits and may temporarily block excessive requests.
 
 ## Build System
 
@@ -93,26 +70,6 @@ The `build.ps1` script automatically:
 - Battle.net installed and launched at least once
 - PowerShell 5.0+ (for PS1 version)
 - .NET Framework (included on all Windows 10+)
-
-## How It Works
-
-1. Reads your Battle.net account list from `%APPDATA%\Battle.net\Battle.net.config`
-2. Displays all saved accounts in a GUI listbox
-3. When you select an account and click "Switch Account" (or double-click):
-   - Your config file is backed up (`.backup`)
-   - The selected account is moved to the top of the saved accounts list
-   - The updated config is saved
-   - The running Battle.net process is stopped (if any)
-   - Battle.net is relaunched with the selected account
-   - The GUI closes
-
-## File Structure
-
-- `bnet-switcher-gui.ps1` - Main GUI application (PowerShell)
-- `bnet-switcher-console.bat` - Console launcher batch file
-- `bnet-switcher.exe` - Compiled standalone executable (generated by build.ps1)
-- `build.ps1` - Build script to compile PS1 to EXE using ps2exe
-- `README.md` - This file
 
 ## Troubleshooting
 
@@ -137,7 +94,7 @@ The `build.ps1` script automatically:
 
 ## Author
 
-Created by Blackwut | Enhanced with dark mode, automatic theme detection, silent operation, and build tooling
+Created by Nepero
 
 ## Legal & Privacy
 
@@ -149,12 +106,12 @@ This tool is a utility for managing your own Battle.net accounts. It only:
 - Only performs the same actions you would manually do by logging in/out
 
 ### 🔒 Privacy & Security
-- **No internet connection required** - This tool operates entirely offline
 - **No data collection** - Your account information never leaves your computer
-- **No telemetry** - No usage tracking, analytics, or external communications
+- **No telemetry** - No usage tracking or analytics
 - **Local operation only** - All operations happen on your machine
 - **Open source** - You can inspect the PowerShell code to verify what it does
 - **Config backups** - Automatic backups created before any changes for safety
+- **Optional OverFast API call** - Only the BattleTag rank lookup reaches the OverFast API; remove BattleTags or disable ranks to remain fully offline.
 
 ### ⚖️ Disclaimer
 This is a community tool. Use at your own risk. Always keep backups of important files. The author is not responsible for any account access issues or data loss.
